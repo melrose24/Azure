@@ -1,0 +1,156 @@
+<#
+.SYNOPSIS
+Compare group memberships of two users using Microsoft Graph API
+.DESCRIPTION
+This script connects to Microsoft Graph and retrieves all group memberships
+for two specified users, then compares them to show:
+- Groups both users are in
+- Groups only User1 is in
+- Groups only User2 is in
+.PARAMETER User1UPN
+User Principal Name of the first user
+.PARAMETER User2UPN
+User Principal Name of the second user
+.EXAMPLE
+.\Compare-UserGroups.ps1 -User1UPN “john.doe@contoso.com” -User2UPN “jane.smith@contoso.com”
+#>
+
+param(
+[Parameter(Mandatory=$true)]
+[string]$User1UPN,
+
+```
+[Parameter(Mandatory=$true)]
+[string]$User2UPN
+```
+
+)
+
+# Check if Microsoft.Graph module is installed
+
+if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Users)) {
+Write-Host “Microsoft.Graph.Users module not found. Installing…” -ForegroundColor Yellow
+Install-Module Microsoft.Graph.Users -Scope CurrentUser -Force
+}
+
+if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Groups)) {
+Write-Host “Microsoft.Graph.Groups module not found. Installing…” -ForegroundColor Yellow
+Install-Module Microsoft.Graph.Groups -Scope CurrentUser -Force
+}
+
+# Import required modules
+
+Import-Module Microsoft.Graph.Users
+Import-Module Microsoft.Graph.Groups
+
+# Connect to Microsoft Graph with required scopes
+
+Write-Host “Connecting to Microsoft Graph…” -ForegroundColor Cyan
+Connect-MgGraph -Scopes “User.Read.All”, “Group.Read.All”, “Directory.Read.All”
+
+function Get-UserGroupMemberships {
+param([string]$UPN)
+
+```
+try {
+# Get user ID
+$user = Get-MgUser -UserId $UPN -ErrorAction Stop
+
+# Get all group memberships (including transitive/nested groups)
+$groups = Get-MgUserMemberOf -UserId $user.Id -All
+
+# Filter to only groups (not directory roles, etc.)
+$groupObjects = $groups | Where-Object { $_.AdditionalProperties.'@odata.type' -eq '#microsoft.graph.group' }
+
+# Get full group details
+$groupDetails = @()
+foreach ($group in $groupObjects) {
+$groupInfo = Get-MgGroup -GroupId $group.Id
+$groupDetails += [PSCustomObject]@{
+DisplayName = $groupInfo.DisplayName
+GroupId = $groupInfo.Id
+Mail = $groupInfo.Mail
+GroupType = if ($groupInfo.GroupTypes -contains "Unified") { "Microsoft 365" } else { "Security" }
+}
+}
+
+return $groupDetails
+}
+catch {
+Write-Host "Error retrieving groups for $UPN : $_" -ForegroundColor Red
+return $null
+}
+```
+
+}
+
+# Get group memberships for both users
+
+Write-Host “`nRetrieving group memberships for $User1UPN…” -ForegroundColor Cyan
+$user1Groups = Get-UserGroupMemberships -UPN $User1UPN
+
+Write-Host “Retrieving group memberships for $User2UPN…” -ForegroundColor Cyan
+$user2Groups = Get-UserGroupMemberships -UPN $User2UPN
+
+if ($null -eq $user1Groups -or $null -eq $user2Groups) {
+Write-Host “Failed to retrieve group information. Exiting.” -ForegroundColor Red
+Disconnect-MgGraph
+exit
+}
+
+# Compare groups
+
+$user1GroupIds = $user1Groups | Select-Object -ExpandProperty GroupId
+$user2GroupIds = $user2Groups | Select-Object -ExpandProperty GroupId
+
+$inBothUsers = $user1Groups | Where-Object { $user2GroupIds -contains $_.GroupId }
+$onlyUser1   = $user1Groups | Where-Object { $user2GroupIds -notcontains $_.GroupId }
+$onlyUser2   = $user2Groups | Where-Object { $user1GroupIds -notcontains $_.GroupId }
+
+# Display results
+
+Write-Host “`n==================== COMPARISON RESULTS ====================” -ForegroundColor Green
+
+Write-Host “`nUser 1: $User1UPN - Total Groups: $($user1Groups.Count)” -ForegroundColor White
+Write-Host “User 2: $User2UPN - Total Groups: $($user2Groups.Count)” -ForegroundColor White
+
+Write-Host “`n— Groups in BOTH Users ($($inBothUsers.Count)) —” -ForegroundColor Yellow
+if ($inBothUsers.Count -eq 0) {
+Write-Host “ No common groups found” -ForegroundColor Gray
+} else {
+$inBothUsers | Sort-Object DisplayName | Format-Table DisplayName, GroupType, Mail -AutoSize
+}
+
+Write-Host “`n— Groups ONLY in $User1UPN ($($onlyUser1.Count)) —” -ForegroundColor Cyan
+if ($onlyUser1.Count -eq 0) {
+Write-Host “ No unique groups found” -ForegroundColor Gray
+} else {
+$onlyUser1 | Sort-Object DisplayName | Format-Table DisplayName, GroupType, Mail -AutoSize
+}
+
+Write-Host “`n— Groups ONLY in $User2UPN ($($onlyUser2.Count)) —” -ForegroundColor Magenta
+if ($onlyUser2.Count -eq 0) {
+Write-Host “ No unique groups found” -ForegroundColor Gray
+} else {
+$onlyUser2 | Sort-Object DisplayName | Format-Table DisplayName, GroupType, Mail -AutoSize
+}
+
+# Export to CSV (optional)
+
+$exportChoice = Read-Host “`nWould you like to export results to CSV? (Y/N)”
+if ($exportChoice -eq ‘Y’ -or $exportChoice -eq ‘y’) {
+$timestamp = Get-Date -Format “yyyyMMdd_HHmmss”
+
+$inBothUsers | Export-Csv “GroupsInBoth_$timestamp.csv” -NoTypeInformation
+$onlyUser1 | Export-Csv “GroupsOnlyUser1_$timestamp.csv” -NoTypeInformation
+$onlyUser2 | Export-Csv “GroupsOnlyUser2_$timestamp.csv” -NoTypeInformation
+
+Write-Host “Results exported to CSV files” -ForegroundColor Green
+}
+
+# Disconnect
+
+Write-Host “`nDisconnecting from Microsoft Graph…” -ForegroundColor Cyan
+Disconnect-MgGraph
+
+Write-Host “Script completed successfully!” -ForegroundColor Green
