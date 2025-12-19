@@ -1,0 +1,61 @@
+# Connect to Microsoft Graph
+Connect-MgGraph -Scopes "DeviceManagementApps.Read.All"
+
+# Get all iOS VPP applications
+Write-Host "Retrieving iOS VPP applications..." -ForegroundColor Cyan
+$vppApps = Get-MgDeviceAppManagementMobileApp -Filter "isof('microsoft.graph.iosVppApp')" -All
+
+Write-Host "Found $($vppApps.Count) VPP applications`n" -ForegroundColor Green
+
+# Create results array
+$results = @()
+
+foreach ($app in $vppApps) {
+    Write-Host "Processing: $($app.DisplayName)" -ForegroundColor Yellow
+    
+    # Get the specific VPP app details with license information
+    $appDetails = Get-MgDeviceAppManagementMobileApp -MobileAppId $app.Id
+    
+    # Cast to iosVppApp to access VPP-specific properties
+    $vppAppDetails = $appDetails.AdditionalProperties
+    
+    # Get license counts from the VPP app properties
+    $totalLicenses = if ($vppAppDetails.totalLicenseCount) { $vppAppDetails.totalLicenseCount } else { "N/A" }
+    $usedLicenses = if ($vppAppDetails.usedLicenseCount) { $vppAppDetails.usedLicenseCount } else { "N/A" }
+    
+    # Calculate available licenses
+    if ($totalLicenses -ne "N/A" -and $usedLicenses -ne "N/A") {
+        $availableLicenses = $totalLicenses - $usedLicenses
+    } else {
+        $availableLicenses = "N/A"
+    }
+    
+    # Create result object
+    $result = [PSCustomObject]@{
+        AppName = $app.DisplayName
+        BundleId = $vppAppDetails.bundleId
+        TotalLicenses = $totalLicenses
+        UsedLicenses = $usedLicenses
+        AvailableLicenses = $availableLicenses
+        VppTokenId = $vppAppDetails.vppTokenId
+        AppId = $app.Id
+    }
+    
+    $results += $result
+}
+
+# Display results in table format
+Write-Host "`n=== VPP Application License Summary ===" -ForegroundColor Cyan
+$results | Format-Table -AutoSize
+
+# Export to CSV
+$exportPath = "VPP_License_Report_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+$results | Export-Csv -Path $exportPath -NoTypeInformation
+Write-Host "`nResults exported to: $exportPath" -ForegroundColor Green
+
+# Summary statistics
+Write-Host "`n=== Summary ===" -ForegroundColor Cyan
+Write-Host "Total VPP Apps: $($results.Count)"
+$appsWithLicenses = ($results | Where-Object { $_.TotalLicenses -ne "N/A" }).Count
+Write-Host "Apps with License Data: $appsWithLicenses"
+Write-Host "Apps without License Data: $($results.Count - $appsWithLicenses)"
