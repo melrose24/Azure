@@ -1,0 +1,55 @@
+
+# Microsoft Graph PowerShell - Intune Device Sync Script
+# Purpose: Find a device by name and invoke sync
+
+# Install Microsoft.Graph modules if not already installed
+# Install-Module Microsoft.Graph.Authentication -Scope CurrentUser
+# Install-Module Microsoft.Graph.DeviceManagement -Scope CurrentUser
+
+# Connect to Microsoft Graph with required permissions
+Connect-MgGraph -Scopes "DeviceManagementManagedDevices.ReadWrite.All"
+
+# Device name to search for
+#Update Devicename
+$deviceName = "UpdateDeviceName"
+
+Write-Host "Searching for device: $deviceName" -ForegroundColor Cyan
+
+# Find the device by name
+$device = Get-MgDeviceManagementManagedDevice -Filter "deviceName eq '$deviceName'"
+
+if ($null -eq $device) {
+    Write-Host "Device '$deviceName' not found." -ForegroundColor Red
+    exit
+}
+
+# Display device information
+Write-Host "`nDevice found:" -ForegroundColor Green
+Write-Host "Device Name: $($device.DeviceName)"
+Write-Host "Device ID: $($device.Id)"
+Write-Host "Last Sync: $($device.LastSyncDateTime)"
+Write-Host "Enrollment Date: $($device.EnrolledDateTime)"
+Write-Host "OS: $($device.OperatingSystem)"
+Write-Host "Compliance State: $($device.ComplianceState)"
+Write-Host "Management State: $($device.ManagedDeviceOwnerType)"
+
+# Calculate days since last sync
+if ($device.LastSyncDateTime) {
+    $daysSinceSync = (Get-Date) - $device.LastSyncDateTime
+    Write-Host "Days since last sync: $([math]::Round($daysSinceSync.TotalDays, 2))" -ForegroundColor Yellow
+}
+
+# Invoke sync on the device
+Write-Host "`nInvoking sync on device..." -ForegroundColor Cyan
+
+try {
+    Invoke-MgGraphRequest -Method POST -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($device.Id)/syncDevice"
+    Write-Host "Sync command sent successfully!" -ForegroundColor Green
+    Write-Host "Note: The device will sync when it next checks in with Intune." -ForegroundColor Yellow
+}
+catch {
+    Write-Host "Error invoking sync: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+# Disconnect from Microsoft Graph
+Disconnect-MgGraph
