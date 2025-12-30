@@ -19,7 +19,7 @@ Version: 1.0
 Requires: PowerShell 5.1 or higher, Admin rights (SYSTEM context)
 #>
 
-#Requires -Version 5.1
+# Requires -Version 5.1
 
 # Function to get the currently logged-in user
 
