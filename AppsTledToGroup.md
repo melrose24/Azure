@@ -1,9 +1,23 @@
-# AppsTledToGroup•ps1
+<#
+.SYNOPSIS
+    AppsTiedToGroup.ps1 - Intune App Assignment Validator
+
+.NOTES
+    DISCLAIMER:
+    This script is provided "AS IS" without any warranties, guarantees, or 
+    representations of any kind. Automated changes or API queries in production 
+    environments carry inherent risks. 
+
+    Please test thoroughly in a staging or non-production environment before 
+    running at scale. The author assumes no liability or responsibility for 
+    any damages, data loss, or unexpected behavior caused by using this code.
+
+# Change File to .PS1
 # Reads FIRST column (column A) from CSV (header not required)
 # Outputs: Name, Status, AssignedToGroup (yes/no), DepLoyedToALDevices (yes/no)
-
 # Neeed to update CSVFolder and File..
 # If looking for another Group, just change it..
+#>
 
 $CsvFolder = "~/Documents/AppLications/"
 $CsvFile = "AppName, csv"
